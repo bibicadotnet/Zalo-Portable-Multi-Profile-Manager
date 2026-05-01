@@ -1,0 +1,16 @@
+{
+  "profiles": [
+    {
+      "id": "profile_1777621890942",
+      "name": "Kira",
+      "color": "#25D366",
+      "created_at": "1777621890"
+    },
+    {
+      "id": "profile_1777621955424",
+      "name": "Phạm Sơn",
+      "color": "#25D366",
+      "created_at": "1777621955"
+    }
+  ]
+}

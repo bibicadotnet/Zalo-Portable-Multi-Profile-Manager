@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zalo Portable — Profile Manager</title>
+    <script src="./main.js" defer></script>
+  </head>
+
+  <body>
+    <!-- Background animated blobs -->
+    <div class="bg-animation">
+      <div class="blob blob-1"></div>
+      <div class="blob blob-2"></div>
+      <div class="blob blob-3"></div>
+    </div>
+
+    <main class="app">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-logo">
+          <svg class="wa-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C6.477 2 2 6.477 2 12c0 5.523 4.477 10 10 10s10-4.477 10-10S17.523 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z" fill="currentColor"/>
+            <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" fill="currentColor"/>
+          </svg>
+          <div>
+            <h1>Zalo Portable</h1>
+            <p class="header-subtitle">Chọn profile để bắt đầu</p>
+          </div>
+        </div>
+      </header>
+
+      <!-- Profile Grid -->
+      <section class="profiles-section">
+        <div id="profiles-grid" class="profiles-grid">
+          <!-- Profiles will be rendered here by JS -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Create/Edit Profile Modal -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div class="modal" id="profile-modal">
+        <div class="modal-header">
+          <h2 id="modal-title">Tạo Profile Mới</h2>
+          <button class="modal-close" id="modal-close-btn" aria-label="Đóng">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="profile-name-input">Tên Profile</label>
+            <input type="text" id="profile-name-input" placeholder="Ví dụ: Cá nhân, Công ty..." maxlength="30" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label>Chọn màu</label>
+            <div class="color-picker" id="color-picker">
+              <button class="color-swatch" data-color="#0068ff" style="background:#0068ff" title="Zalo Blue"></button>
+              <button class="color-swatch" data-color="#5B72F0" style="background:#5B72F0" title="Blue"></button>
+              <button class="color-swatch" data-color="#E84393" style="background:#E84393" title="Pink"></button>
+              <button class="color-swatch" data-color="#FD7014" style="background:#FD7014" title="Orange"></button>
+              <button class="color-swatch" data-color="#00B894" style="background:#00B894" title="Teal"></button>
+              <button class="color-swatch" data-color="#6C5CE7" style="background:#6C5CE7" title="Purple"></button>
+              <button class="color-swatch" data-color="#E17055" style="background:#E17055" title="Coral"></button>
+              <button class="color-swatch" data-color="#0984E3" style="background:#0984E3" title="Sky Blue"></button>
+              <button class="color-swatch" data-color="#FDCB6E" style="background:#FDCB6E" title="Yellow"></button>
+              <button class="color-swatch" data-color="#636E72" style="background:#636E72" title="Gray"></button>
+            </div>
+          </div>
+          <!-- Preview -->
+          <div class="form-group">
+            <label>Xem trước</label>
+            <div class="preview-card" id="preview-card">
+              <div class="preview-avatar" id="preview-avatar">?</div>
+              <span class="preview-name" id="preview-name">Tên profile</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="modal-cancel-btn">Huỷ</button>
+          <button class="btn btn-primary" id="modal-save-btn">Tạo Profile</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu hidden">
+      <button class="context-item" id="ctx-open">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        Mở Zalo
+      </button>
+      <button class="context-item" id="ctx-rename">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Đổi tên
+      </button>
+      <button class="context-item" id="ctx-color">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12a10 10 0 005 8.66"/></svg>
+        Đổi màu
+      </button>
+      <div class="context-divider"></div>
+      <button class="context-item context-danger" id="ctx-delete">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+        Xoá Profile
+      </button>
+    </div>
+
+    <!-- Delete Confirmation -->
+    <div id="delete-overlay" class="modal-overlay hidden">
+      <div class="modal modal-sm">
+        <div class="modal-header">
+          <h2>Xác nhận xoá</h2>
+        </div>
+        <div class="modal-body">
+          <p class="delete-msg">Bạn có chắc muốn xoá profile <strong id="delete-profile-name"></strong>?</p>
+          <p class="delete-warn">Tất cả dữ liệu đăng nhập Zalo của profile này sẽ bị xoá vĩnh viễn.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="delete-cancel-btn">Huỷ</button>
+          <button class="btn btn-danger" id="delete-confirm-btn">Xoá</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
