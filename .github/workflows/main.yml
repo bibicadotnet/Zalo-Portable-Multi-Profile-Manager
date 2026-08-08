@@ -8,6 +8,12 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Nhập phiên bản để phát hành (ví dụ: v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
 
 jobs:
   build-windows:
@@ -40,10 +46,9 @@ jobs:
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
-          name: "Zalo Portable ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}"
+          tag_name: ${{ github.event.inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}
+          name: "Zalo Portable ${{ github.event.inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}"
           draft: true
           prerelease: false
           files: |
