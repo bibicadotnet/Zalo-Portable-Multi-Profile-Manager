@@ -79,44 +79,6 @@ fn now_iso() -> String {
     format!("{}", secs)
 }
 
-// ─── Tray Helper ──────────────────────────────────────────
-fn rebuild_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-
-    let profiles_data = load_profiles();
-    
-    let menu = Menu::new(app_handle).map_err(|e| e.to_string())?;
-
-    let toggle = MenuItem::with_id(app_handle, "toggle", "Quản lý Profile", true, None::<&str>).map_err(|e| e.to_string())?;
-    menu.append(&toggle).map_err(|e| e.to_string())?;
-    
-    let sep1 = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
-    menu.append(&sep1).map_err(|e| e.to_string())?;
-
-    for p in &profiles_data.profiles {
-        let item = MenuItem::with_id(
-            app_handle,
-            format!("open_profile:{}", p.id),
-            &p.name,
-            true,
-            None::<&str>,
-        ).map_err(|e| e.to_string())?;
-        menu.append(&item).map_err(|e| e.to_string())?;
-    }
-
-    let sep2 = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
-    menu.append(&sep2).map_err(|e| e.to_string())?;
-
-    let quit = MenuItem::with_id(app_handle, "quit", "Thoát hoàn toàn", true, None::<&str>).map_err(|e| e.to_string())?;
-    menu.append(&quit).map_err(|e| e.to_string())?;
-
-    if let Some(tray) = app_handle.tray_by_id("main") {
-        let _ = tray.set_menu(Some(menu));
-    }
-
-    Ok(())
-}
-
 // ─── Tauri Commands ─────────────────────────────────────────
 
 #[tauri::command]
@@ -126,7 +88,7 @@ fn list_profiles() -> Result<Vec<Profile>, String> {
 }
 
 #[tauri::command]
-fn create_profile(app_handle: tauri::AppHandle, name: String, color: String) -> Result<Profile, String> {
+fn create_profile(name: String, color: String) -> Result<Profile, String> {
     let mut data = load_profiles();
 
     let profile = Profile {
@@ -143,13 +105,11 @@ fn create_profile(app_handle: tauri::AppHandle, name: String, color: String) -> 
     data.profiles.push(profile.clone());
     save_profiles(&data)?;
 
-    let _ = rebuild_tray_menu(&app_handle);
-
     Ok(profile)
 }
 
 #[tauri::command]
-fn delete_profile(app_handle: tauri::AppHandle, id: String) -> Result<(), String> {
+fn delete_profile(id: String) -> Result<(), String> {
     let mut data = load_profiles();
     data.profiles.retain(|p| p.id != id);
     save_profiles(&data)?;
@@ -160,13 +120,11 @@ fn delete_profile(app_handle: tauri::AppHandle, id: String) -> Result<(), String
         fs::remove_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
 
-    let _ = rebuild_tray_menu(&app_handle);
-
     Ok(())
 }
 
 #[tauri::command]
-fn rename_profile(app_handle: tauri::AppHandle, id: String, new_name: String) -> Result<(), String> {
+fn rename_profile(id: String, new_name: String) -> Result<(), String> {
     let mut data = load_profiles();
     if let Some(profile) = data.profiles.iter_mut().find(|p| p.id == id) {
         profile.name = new_name;
@@ -174,35 +132,7 @@ fn rename_profile(app_handle: tauri::AppHandle, id: String, new_name: String) ->
         return Err("Profile not found".to_string());
     }
     save_profiles(&data)?;
-
-    let _ = rebuild_tray_menu(&app_handle);
-
     Ok(())
-}
-
-#[tauri::command]
-fn show_system_notification(title: String, body: String) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    // Use System.Windows.Forms.NotifyIcon for maximum compatibility on all Windows versions
-    let script = format!(
-        r#"Add-Type -AssemblyName System.Windows.Forms; $notification = New-Object System.Windows.Forms.NotifyIcon; $notification.Icon = [System.Drawing.SystemIcons]::Information; $notification.BalloonTipTitle = "{}"; $notification.BalloonTipText = "{}"; $notification.Visible = $True; $notification.ShowBalloonTip(5000);"#,
-        title.replace("\"", "`\"").replace("'", "`'"),
-        body.replace("\"", "`\"").replace("'", "`'")
-    );
-
-    let _ = std::process::Command::new("powershell")
-        .creation_flags(CREATE_NO_WINDOW)
-        .args(&["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
-        .spawn();
-}
-
-#[tauri::command]
-fn update_window_attention(window: tauri::Window, has_unread: bool) {
-    if has_unread {
-        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
-    }
 }
 
 #[tauri::command]
@@ -238,73 +168,6 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
     .min_inner_size(400.0, 300.0)
     .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
     .data_directory(clean_data_dir)
-    .initialization_script(r#"
-        (function() {
-            // Hook standard Notification API
-            window.Notification = class CustomNotification {
-                static permission = 'granted';
-                static requestPermission(callback) {
-                    if (callback) callback('granted');
-                    return Promise.resolve('granted');
-                }
-                constructor(title, options) {
-                    this.title = title;
-                    this.options = options;
-                    
-                    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-                        window.__TAURI__.core.invoke('show_system_notification', {
-                            title: title,
-                            body: options && options.body ? options.body : ''
-                        }).catch(console.error);
-                    }
-                }
-                close() {}
-                addEventListener() {}
-                removeEventListener() {}
-                dispatchEvent() {}
-            };
-
-            // Hook Service Worker notifications (used by Zalo Web for push alerts)
-            if (window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype.showNotification) {
-                const originalShowNotification = window.ServiceWorkerRegistration.prototype.showNotification;
-                window.ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
-                    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-                        window.__TAURI__.core.invoke('show_system_notification', {
-                            title: title,
-                            body: options && options.body ? options.body : ''
-                        }).catch(console.error);
-                    }
-                    return Promise.resolve();
-                };
-            }
-
-            // Watch document title for unread message indicator
-            let lastUnread = false;
-            function checkTitle() {
-                const title = document.title;
-                const hasUnread = /^\(\d+\)/.test(title) || /^\(\*\)/.test(title);
-                if (hasUnread !== lastUnread) {
-                    lastUnread = hasUnread;
-                    if (hasUnread && window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-                        window.__TAURI__.core.invoke('update_window_attention', {
-                            hasUnread: true
-                        }).catch(console.error);
-                    }
-                }
-            }
-
-            // Monitor title changes via MutationObserver
-            const observer = new MutationObserver(() => {
-                checkTitle();
-            });
-            observer.observe(document.head, {
-                childList: true,
-                subtree: true,
-                characterData: true
-            });
-            setInterval(checkTitle, 2000);
-        })();
-    "#)
     .on_navigation(|url| {
         // Allow Zalo and all standard web protocols
         let scheme = url.scheme();
@@ -319,11 +182,52 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
         e.to_string()
     })?;
 
+    // Create a dedicated system tray icon for this specific profile
+    let tray_id = format!("tray_{}", id);
+    if app_handle.tray_by_id(&tray_id).is_none() {
+        use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+        use tauri::menu::{Menu, MenuItem};
+
+        let quit = MenuItem::with_id(&app_handle, format!("quit_{}", id), "Thoát", true, None::<&str>).map_err(|e| e.to_string())?;
+        let menu = Menu::with_items(&app_handle, &[&quit]).map_err(|e| e.to_string())?;
+
+        let window_label_clone = window_label.clone();
+        let tray_id_clone = tray_id.clone();
+        let id_clone = id.clone();
+
+        let mut tray_builder = TrayIconBuilder::with_id(&tray_id)
+            .menu(&menu)
+            .on_menu_event(move |app, event| {
+                let quit_id = format!("quit_{}", id_clone);
+                if event.id.as_ref() == &quit_id {
+                    if let Some(win) = app.get_webview_window(&window_label_clone) {
+                        let _ = win.destroy();
+                    }
+                    let _ = app.remove_tray_by_id(&tray_id_clone);
+                }
+            })
+            .on_tray_icon_event(move |tray, event| {
+                if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+                    let app = tray.app_handle();
+                    if let Some(win) = app.get_webview_window(&window_label) {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                }
+            });
+
+        if let Some(icon) = app_handle.default_window_icon() {
+            tray_builder = tray_builder.icon(icon.clone());
+        }
+
+        let _tray = tray_builder.build(&app_handle).map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-fn update_profile_color(app_handle: tauri::AppHandle, id: String, color: String) -> Result<(), String> {
+fn update_profile_color(id: String, color: String) -> Result<(), String> {
     let mut data = load_profiles();
     if let Some(profile) = data.profiles.iter_mut().find(|p| p.id == id) {
         profile.color = color;
@@ -331,9 +235,6 @@ fn update_profile_color(app_handle: tauri::AppHandle, id: String, color: String)
         return Err("Profile not found".to_string());
     }
     save_profiles(&data)?;
-
-    let _ = rebuild_tray_menu(&app_handle);
-
     Ok(())
 }
 
@@ -341,70 +242,27 @@ fn update_profile_color(app_handle: tauri::AppHandle, id: String, color: String)
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
-            use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-
-            let mut tray_builder = TrayIconBuilder::with_id("main")
-                .on_menu_event(|app, event| {
-                    let id = event.id.as_ref();
-                    match id {
-                        "toggle" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                if window.is_visible().unwrap_or(false) {
-                                    let _ = window.hide();
-                                } else {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                }
-                            }
-                        }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ if id.starts_with("open_profile:") => {
-                            let profile_id = id.trim_start_matches("open_profile:");
-                            let data = load_profiles();
-                            if let Some(p) = data.profiles.iter().find(|p| p.id == profile_id) {
-                                let app_clone = app.clone();
-                                let p_id = p.id.clone();
-                                let p_name = p.name.clone();
-                                tauri::async_runtime::spawn(async move {
-                                    let _ = open_profile(app_clone, p_id, p_name).await;
-                                });
-                            }
-                        }
-                        _ => {}
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                        let app = tray.app_handle();
-                        for window in app.webview_windows().values() {
-                            if window.label().starts_with("zalo_") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    }
-                });
-
-            if let Some(icon) = app.default_window_icon() {
-                tray_builder = tray_builder.icon(icon.clone());
-            }
-
-            let _tray = tray_builder.build(app)?;
-
-            // Rebuild menu to populate profiles
-            let _ = rebuild_tray_menu(app.app_handle());
-
+        .setup(|_app| {
+            // Main manager window does not have a system tray icon on startup
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label().starts_with("zalo_") {
-                    let _ = window.hide();
-                    api.prevent_close();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if window.label().starts_with("zalo_") {
+                        let _ = window.hide();
+                        api.prevent_close();
+                    }
                 }
+                tauri::WindowEvent::Destroyed => {
+                    let label = window.label();
+                    if label.starts_with("zalo_") {
+                        let id = label.trim_start_matches("zalo_");
+                        let tray_id = format!("tray_{}", id);
+                        let _ = window.app_handle().remove_tray_by_id(&tray_id);
+                    }
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -414,8 +272,6 @@ pub fn run() {
             rename_profile,
             open_profile,
             update_profile_color,
-            show_system_notification,
-            update_window_attention,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
