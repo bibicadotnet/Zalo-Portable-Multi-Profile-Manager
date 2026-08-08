@@ -3,6 +3,8 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
+use tauri::Manager;
+
 
 static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -140,6 +142,15 @@ fn rename_profile(id: String, new_name: String) -> Result<(), String> {
 async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
 
+    let window_label = format!("zalo_{}", id);
+
+    // If window already exists, just show and focus it
+    if let Some(win) = app_handle.get_webview_window(&window_label) {
+        win.show().map_err(|e| e.to_string())?;
+        win.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
     let data_dir = get_profile_data_dir(&id);
     fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     
@@ -149,10 +160,6 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
     let clean_data_dir_str = data_dir.to_string_lossy().replace("\\\\?\\", "");
     let clean_data_dir = std::path::PathBuf::from(clean_data_dir_str);
     println!("Opening profile '{}' with data dir: {:?}", name, clean_data_dir);
-
-    // Generate a unique window label
-    let counter = WINDOW_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let window_label = format!("zalo_{}", counter);
 
     let _win = WebviewWindowBuilder::new(
         &app_handle,
@@ -197,6 +204,61 @@ fn update_profile_color(id: String, color: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            use tauri::menu::{Menu, MenuItem};
+            use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+
+            let toggle = MenuItem::with_id(app, "toggle", "Quản lý Profile", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Thoát hoàn toàn", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&toggle, &quit])?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&menu)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "toggle" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder.build(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             list_profiles,
             create_profile,
