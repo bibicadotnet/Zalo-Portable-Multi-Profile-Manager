@@ -198,6 +198,13 @@ fn show_system_notification(title: String, body: String) {
 }
 
 #[tauri::command]
+fn update_window_attention(window: tauri::Window, has_unread: bool) {
+    if has_unread {
+        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    }
+}
+
+#[tauri::command]
 async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
 
@@ -232,6 +239,7 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
     .data_directory(clean_data_dir)
     .initialization_script(r#"
         (function() {
+            // Hook Notification API
             window.Notification = class CustomNotification {
                 static permission = 'granted';
                 static requestPermission(callback) {
@@ -254,6 +262,32 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
                 removeEventListener() {}
                 dispatchEvent() {}
             };
+
+            // Watch document title for unread message indicator
+            let lastUnread = false;
+            function checkTitle() {
+                const title = document.title;
+                const hasUnread = /^\(\d+\)/.test(title) || /^\(\*\)/.test(title);
+                if (hasUnread !== lastUnread) {
+                    lastUnread = hasUnread;
+                    if (hasUnread && window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+                        window.__TAURI__.core.invoke('update_window_attention', {
+                            hasUnread: true
+                        }).catch(console.error);
+                    }
+                }
+            }
+
+            // Monitor title changes via MutationObserver
+            const observer = new MutationObserver(() => {
+                checkTitle();
+            });
+            observer.observe(document.head, {
+                childList: true,
+                subtree: true,
+                characterData: true
+            });
+            setInterval(checkTitle, 2000);
         })();
     "#)
     .on_navigation(|url| {
@@ -366,6 +400,7 @@ pub fn run() {
             open_profile,
             update_profile_color,
             show_system_notification,
+            update_window_attention,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
