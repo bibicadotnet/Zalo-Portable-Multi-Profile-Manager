@@ -135,6 +135,45 @@ fn rename_profile(id: String, new_name: String) -> Result<(), String> {
     Ok(())
 }
 
+fn prepare_preferences_file(profile_data_dir: &std::path::Path) {
+    let default_dir = profile_data_dir.join("EBWebView").join("Default");
+    let preferences_path = default_dir.join("Preferences");
+    
+    if let Err(_) = fs::create_dir_all(&default_dir) {
+        return;
+    }
+    
+    let mut preferences_json: serde_json::Value = if preferences_path.exists() {
+        let content = fs::read_to_string(&preferences_path).unwrap_or_default();
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    
+    // Set notification permission to 1 (Allow) for chat.zalo.me
+    if let Some(profile) = preferences_json.as_object_mut() {
+        let profile_obj = profile.entry("profile").or_insert_with(|| serde_json::json!({}));
+        if let Some(prof) = profile_obj.as_object_mut() {
+            let content_settings = prof.entry("content_settings").or_insert_with(|| serde_json::json!({}));
+            if let Some(cs) = content_settings.as_object_mut() {
+                let exceptions = cs.entry("exceptions").or_insert_with(|| serde_json::json!({}));
+                if let Some(ex) = exceptions.as_object_mut() {
+                    let notifications = ex.entry("notifications").or_insert_with(|| serde_json::json!({}));
+                    if let Some(notif) = notifications.as_object_mut() {
+                        notif.insert("https://chat.zalo.me:443,*".to_string(), serde_json::json!({
+                            "setting": 1
+                        }));
+                    }
+                }
+            }
+        }
+    }
+    
+    if let Ok(content) = serde_json::to_string(&preferences_json) {
+        let _ = fs::write(&preferences_path, content);
+    }
+}
+
 #[tauri::command]
 async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
@@ -150,6 +189,9 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
 
     let data_dir = get_profile_data_dir(&id);
     fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    
+    // Auto-grant notifications in preferences file before starting the webview
+    prepare_preferences_file(&data_dir);
     
     // Make sure path is absolute and clean (helps WebView2)
     // Canonicalize on Windows adds \\?\ prefix which breaks WebView2 IndexedDB/LocalStorage!
