@@ -44,8 +44,8 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}
-          name: "Zalo Portable ${{ inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}"
+          tag_name: ${{ github.event.inputs.version || 'v1.0.0' }}
+          name: "Zalo Portable ${{ github.event.inputs.version || 'v1.0.0' }}"
           draft: false
           prerelease: false
           files: src-tauri/target/release/*.exe
