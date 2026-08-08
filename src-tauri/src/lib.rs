@@ -2,11 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
 use tauri::Manager;
 
-
-static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Profile {
@@ -88,14 +85,14 @@ fn rebuild_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
 
     let profiles_data = load_profiles();
     
+    let menu = Menu::new(app_handle).map_err(|e| e.to_string())?;
+
     let toggle = MenuItem::with_id(app_handle, "toggle", "Quản lý Profile", true, None::<&str>).map_err(|e| e.to_string())?;
-    
-    let mut menu_items: Vec<&dyn tauri::menu::IsMenuItem> = vec![&toggle];
+    menu.append(&toggle).map_err(|e| e.to_string())?;
     
     let sep1 = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
-    menu_items.push(&sep1);
+    menu.append(&sep1).map_err(|e| e.to_string())?;
 
-    let mut profile_items = Vec::new();
     for p in &profiles_data.profiles {
         let item = MenuItem::with_id(
             app_handle,
@@ -104,20 +101,14 @@ fn rebuild_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
             true,
             None::<&str>,
         ).map_err(|e| e.to_string())?;
-        profile_items.push(item);
-    }
-    
-    for item in &profile_items {
-        menu_items.push(item);
+        menu.append(&item).map_err(|e| e.to_string())?;
     }
 
     let sep2 = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
-    menu_items.push(&sep2);
+    menu.append(&sep2).map_err(|e| e.to_string())?;
 
     let quit = MenuItem::with_id(app_handle, "quit", "Thoát hoàn toàn", true, None::<&str>).map_err(|e| e.to_string())?;
-    menu_items.push(&quit);
-
-    let menu = Menu::with_items(app_handle, &menu_items).map_err(|e| e.to_string())?;
+    menu.append(&quit).map_err(|e| e.to_string())?;
 
     if let Some(tray) = app_handle.tray_by_id("main") {
         let _ = tray.set_menu(Some(menu));
@@ -290,8 +281,7 @@ pub fn run() {
         .setup(|app| {
             use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 
-            let mut tray_builder = TrayIconBuilder::new()
-                .id("main")
+            let mut tray_builder = TrayIconBuilder::with_id("main")
                 .on_menu_event(|app, event| {
                     let id = event.id.as_ref();
                     match id {
