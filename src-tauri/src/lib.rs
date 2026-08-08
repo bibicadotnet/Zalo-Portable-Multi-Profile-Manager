@@ -185,8 +185,9 @@ fn show_system_notification(title: String, body: String) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+    // Use System.Windows.Forms.NotifyIcon for maximum compatibility on all Windows versions
     let script = format!(
-        r#"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $toastXml = [xml]$template.GetXml(); $toastXml.GetElementsByTagName("text")[0].AppendChild($toastXml.CreateTextNode("{}")) > $null; $toastXml.GetElementsByTagName("text")[1].AppendChild($toastXml.CreateTextNode("{}")) > $null; $xml = New-Object Windows.Data.Xml.Dom.XmlDocument; $xml.LoadXml($toastXml.OuterXml); $toast = New-Object Windows.UI.Notifications.ToastNotification $xml; [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Zalo Portable").Show($toast)"#,
+        r#"Add-Type -AssemblyName System.Windows.Forms; $notification = New-Object System.Windows.Forms.NotifyIcon; $notification.Icon = [System.Drawing.SystemIcons]::Information; $notification.BalloonTipTitle = "{}"; $notification.BalloonTipText = "{}"; $notification.Visible = $True; $notification.ShowBalloonTip(5000);"#,
         title.replace("\"", "`\"").replace("'", "`'"),
         body.replace("\"", "`\"").replace("'", "`'")
     );
@@ -239,7 +240,7 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
     .data_directory(clean_data_dir)
     .initialization_script(r#"
         (function() {
-            // Hook Notification API
+            // Hook standard Notification API
             window.Notification = class CustomNotification {
                 static permission = 'granted';
                 static requestPermission(callback) {
@@ -262,6 +263,20 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
                 removeEventListener() {}
                 dispatchEvent() {}
             };
+
+            // Hook Service Worker notifications (used by Zalo Web for push alerts)
+            if (window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype.showNotification) {
+                const originalShowNotification = window.ServiceWorkerRegistration.prototype.showNotification;
+                window.ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
+                    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+                        window.__TAURI__.core.invoke('show_system_notification', {
+                            title: title,
+                            body: options && options.body ? options.body : ''
+                        }).catch(console.error);
+                    }
+                    return Promise.resolve();
+                };
+            }
 
             // Watch document title for unread message indicator
             let lastUnread = false;
