@@ -42,12 +42,10 @@ jobs:
         run: npm run tauri build -- --no-bundle
 
       - name: Create Release and Upload Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.version || 'v1.0.0' }}
-          name: "Zalo Portable ${{ github.event.inputs.version || 'v1.0.0' }}"
-          draft: false
-          prerelease: false
-          files: src-tauri/target/release/*.exe
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.inputs.version || 'v1.0.0' }}
+        run: |
+          # Create release if it doesn't exist, or update assets if it does
+          gh release create "$env:VERSION" --title "Zalo Portable $env:VERSION" --notes "Release build for Windows." --draft=false --prerelease=false --clobber src-tauri/target/release/*.exe
