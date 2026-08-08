@@ -3,5 +3,7 @@
   "identifier": "zalo",
   "description": "Capability for zalo windows",
   "windows": ["zalo_*"],
-  "permissions": []
+  "permissions": [
+    "notification:default"
+  ]
 }

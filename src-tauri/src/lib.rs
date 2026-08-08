@@ -82,6 +82,50 @@ fn now_iso() -> String {
     format!("{}", secs)
 }
 
+// ─── Tray Helper ──────────────────────────────────────────
+fn rebuild_tray_menu(app_handle: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+
+    let profiles_data = load_profiles();
+    
+    let toggle = MenuItem::with_id(app_handle, "toggle", "Quản lý Profile", true, None::<&str>).map_err(|e| e.to_string())?;
+    
+    let mut menu_items: Vec<&dyn tauri::menu::IsMenuItem> = vec![&toggle];
+    
+    let sep1 = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
+    menu_items.push(&sep1);
+
+    let mut profile_items = Vec::new();
+    for p in &profiles_data.profiles {
+        let item = MenuItem::with_id(
+            app_handle,
+            format!("open_profile:{}", p.id),
+            &p.name,
+            true,
+            None::<&str>,
+        ).map_err(|e| e.to_string())?;
+        profile_items.push(item);
+    }
+    
+    for item in &profile_items {
+        menu_items.push(item);
+    }
+
+    let sep2 = PredefinedMenuItem::separator(app_handle).map_err(|e| e.to_string())?;
+    menu_items.push(&sep2);
+
+    let quit = MenuItem::with_id(app_handle, "quit", "Thoát hoàn toàn", true, None::<&str>).map_err(|e| e.to_string())?;
+    menu_items.push(&quit);
+
+    let menu = Menu::with_items(app_handle, &menu_items).map_err(|e| e.to_string())?;
+
+    if let Some(tray) = app_handle.tray_by_id("main") {
+        let _ = tray.set_menu(Some(menu));
+    }
+
+    Ok(())
+}
+
 // ─── Tauri Commands ─────────────────────────────────────────
 
 #[tauri::command]
@@ -91,7 +135,7 @@ fn list_profiles() -> Result<Vec<Profile>, String> {
 }
 
 #[tauri::command]
-fn create_profile(name: String, color: String) -> Result<Profile, String> {
+fn create_profile(app_handle: tauri::AppHandle, name: String, color: String) -> Result<Profile, String> {
     let mut data = load_profiles();
 
     let profile = Profile {
@@ -108,11 +152,13 @@ fn create_profile(name: String, color: String) -> Result<Profile, String> {
     data.profiles.push(profile.clone());
     save_profiles(&data)?;
 
+    let _ = rebuild_tray_menu(&app_handle);
+
     Ok(profile)
 }
 
 #[tauri::command]
-fn delete_profile(id: String) -> Result<(), String> {
+fn delete_profile(app_handle: tauri::AppHandle, id: String) -> Result<(), String> {
     let mut data = load_profiles();
     data.profiles.retain(|p| p.id != id);
     save_profiles(&data)?;
@@ -123,11 +169,13 @@ fn delete_profile(id: String) -> Result<(), String> {
         fs::remove_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
 
+    let _ = rebuild_tray_menu(&app_handle);
+
     Ok(())
 }
 
 #[tauri::command]
-fn rename_profile(id: String, new_name: String) -> Result<(), String> {
+fn rename_profile(app_handle: tauri::AppHandle, id: String, new_name: String) -> Result<(), String> {
     let mut data = load_profiles();
     if let Some(profile) = data.profiles.iter_mut().find(|p| p.id == id) {
         profile.name = new_name;
@@ -135,6 +183,9 @@ fn rename_profile(id: String, new_name: String) -> Result<(), String> {
         return Err("Profile not found".to_string());
     }
     save_profiles(&data)?;
+
+    let _ = rebuild_tray_menu(&app_handle);
+
     Ok(())
 }
 
@@ -171,6 +222,34 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
     .min_inner_size(400.0, 300.0)
     .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
     .data_directory(clean_data_dir)
+    .initialization_script(r#"
+        (function() {
+            window.Notification = class CustomNotification {
+                static permission = 'granted';
+                static requestPermission(callback) {
+                    if (callback) callback('granted');
+                    return Promise.resolve('granted');
+                }
+                constructor(title, options) {
+                    this.title = title;
+                    this.options = options;
+                    
+                    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+                        window.__TAURI__.core.invoke('plugin:notification|notify', {
+                            notification: {
+                                title: title,
+                                body: options && options.body ? options.body : ''
+                            }
+                        }).catch(console.error);
+                    }
+                }
+                close() {}
+                addEventListener() {}
+                removeEventListener() {}
+                dispatchEvent() {}
+            };
+        })();
+    "#)
     .on_navigation(|url| {
         // Allow Zalo and all standard web protocols
         let scheme = url.scheme();
@@ -189,7 +268,7 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
 }
 
 #[tauri::command]
-fn update_profile_color(id: String, color: String) -> Result<(), String> {
+fn update_profile_color(app_handle: tauri::AppHandle, id: String, color: String) -> Result<(), String> {
     let mut data = load_profiles();
     if let Some(profile) = data.profiles.iter_mut().find(|p| p.id == id) {
         profile.color = color;
@@ -197,6 +276,9 @@ fn update_profile_color(id: String, color: String) -> Result<(), String> {
         return Err("Profile not found".to_string());
     }
     save_profiles(&data)?;
+
+    let _ = rebuild_tray_menu(&app_handle);
+
     Ok(())
 }
 
@@ -204,18 +286,15 @@ fn update_profile_color(id: String, color: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            use tauri::menu::{Menu, MenuItem};
             use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 
-            let toggle = MenuItem::with_id(app, "toggle", "Quản lý Profile", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Thoát hoàn toàn", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&toggle, &quit])?;
-
             let mut tray_builder = TrayIconBuilder::new()
-                .menu(&menu)
+                .id("main")
                 .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
+                    let id = event.id.as_ref();
+                    match id {
                         "toggle" => {
                             if let Some(window) = app.get_webview_window("main") {
                                 if window.is_visible().unwrap_or(false) {
@@ -228,6 +307,18 @@ pub fn run() {
                         }
                         "quit" => {
                             app.exit(0);
+                        }
+                        _ if id.starts_with("open_profile:") => {
+                            let profile_id = id.trim_start_matches("open_profile:");
+                            let data = load_profiles();
+                            if let Some(p) = data.profiles.iter().find(|p| p.id == profile_id) {
+                                let app_clone = app.clone();
+                                let p_id = p.id.clone();
+                                let p_name = p.name.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    let _ = open_profile(app_clone, p_id, p_name).await;
+                                });
+                            }
                         }
                         _ => {}
                     }
@@ -251,6 +342,10 @@ pub fn run() {
             }
 
             let _tray = tray_builder.build(app)?;
+
+            // Rebuild menu to populate profiles
+            let _ = rebuild_tray_menu(app.app_handle());
+
             Ok(())
         })
         .on_window_event(|window, event| {
