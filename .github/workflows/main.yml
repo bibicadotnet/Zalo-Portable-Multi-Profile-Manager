@@ -47,5 +47,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ github.event.inputs.version || 'v1.0.0' }}
         run: |
-          # Create release if it doesn't exist, or update assets if it does
-          gh release create "$env:VERSION" --title "Zalo Portable $env:VERSION" --notes "Release build for Windows." --draft=false --prerelease=false --clobber src-tauri/target/release/*.exe
+          # Delete existing release and tag if they exist
+          $null = gh release delete "$env:VERSION" --yes --cleanup-tag 2>&1
+          
+          # Create new release and upload the standalone binary
+          gh release create "$env:VERSION" --title "Zalo Portable $env:VERSION" --notes "Release build for Windows." --draft=false --prerelease=false src-tauri/target/release/*.exe
