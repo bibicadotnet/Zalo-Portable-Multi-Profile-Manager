@@ -3,7 +3,5 @@
   "identifier": "zalo",
   "description": "Capability for zalo windows",
   "windows": ["zalo_*"],
-  "permissions": [
-    "allow-show-system-notification"
-  ]
+  "permissions": []
 }
