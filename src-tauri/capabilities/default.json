@@ -6,6 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "notification:default"
+    "allow-show-system-notification"
   ]
 }

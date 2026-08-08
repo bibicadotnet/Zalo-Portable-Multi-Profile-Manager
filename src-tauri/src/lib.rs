@@ -181,6 +181,23 @@ fn rename_profile(app_handle: tauri::AppHandle, id: String, new_name: String) ->
 }
 
 #[tauri::command]
+fn show_system_notification(title: String, body: String) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let script = format!(
+        r#"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $toastXml = [xml]$template.GetXml(); $toastXml.GetElementsByTagName("text")[0].AppendChild($toastXml.CreateTextNode("{}")) > $null; $toastXml.GetElementsByTagName("text")[1].AppendChild($toastXml.CreateTextNode("{}")) > $null; $xml = New-Object Windows.Data.Xml.Dom.XmlDocument; $xml.LoadXml($toastXml.OuterXml); $toast = New-Object Windows.UI.Notifications.ToastNotification $xml; [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Zalo Portable").Show($toast)"#,
+        title.replace("\"", "`\"").replace("'", "`'"),
+        body.replace("\"", "`\"").replace("'", "`'")
+    );
+
+    let _ = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(&["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+        .spawn();
+}
+
+#[tauri::command]
 async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
 
@@ -226,11 +243,9 @@ async fn open_profile(app_handle: tauri::AppHandle, id: String, name: String) ->
                     this.options = options;
                     
                     if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-                        window.__TAURI__.core.invoke('plugin:notification|notify', {
-                            notification: {
-                                title: title,
-                                body: options && options.body ? options.body : ''
-                            }
+                        window.__TAURI__.core.invoke('show_system_notification', {
+                            title: title,
+                            body: options && options.body ? options.body : ''
                         }).catch(console.error);
                     }
                 }
@@ -277,7 +292,6 @@ fn update_profile_color(app_handle: tauri::AppHandle, id: String, color: String)
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 
@@ -316,10 +330,8 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
+                        for window in app.webview_windows().values() {
+                            if window.label().starts_with("zalo_") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
@@ -340,8 +352,10 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+                if window.label().starts_with("zalo_") {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -351,6 +365,7 @@ pub fn run() {
             rename_profile,
             open_profile,
             update_profile_color,
+            show_system_notification,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -4,6 +4,6 @@
   "description": "Capability for zalo windows",
   "windows": ["zalo_*"],
   "permissions": [
-    "notification:default"
+    "allow-show-system-notification"
   ]
 }
